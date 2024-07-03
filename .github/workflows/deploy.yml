@@ -1,0 +1,50 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID_DEV: mesha-dev
+      REGION: us-central1
+      NODE_APP_NAME: test-node-app
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v0.2.0
+      with:
+        version: 'latest'
+        service_account_key: ${{ secrets.GCP_SA_KEY_DEV }}
+        project_id: ${{ env.PROJECT_ID_DEV }}
+
+    - name: Authenticate with Google Cloud
+      run: gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY_DEV }}
+
+    - name: Configure Docker
+      run: gcloud auth configure-docker
+
+    - name: Deploy Node.js App
+      run: |
+        gcloud run deploy ${{ env.NODE_APP_NAME }} \
+          --image gcr.io/${{ env.PROJECT_ID_DEV }}/${{ env.NODE_APP_NAME }}:$GITHUB_SHA \
+          --platform managed \
+          --region ${{ env.REGION }}
+
+    - name: Deploy to Stage
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage'
+      uses: google-github-actions/deploy-cloudrun@v0.2.0
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY_STAGE }}
+        project_id: ${{ env.PROJECT_ID_STAGE }}
+        service: ${{ env.NODE_APP_NAME }}
+        image: gcr.io/${{ env.PROJECT_ID_STAGE }}/${{ env.NODE_APP_NAME }}:$GITHUB_SHA
+        region: ${{ env.REGION }}
